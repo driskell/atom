@@ -122,6 +122,9 @@ class DisplayBuffer extends Model
   onDidChangeGrammar: (callback) ->
     @tokenizedBuffer.onDidChangeGrammar(callback)
 
+  onDidDetectTabulation: (callback) ->
+    @tokenizedBuffer.onDidDetectTabulation(callback)
+
   onDidTokenize: (callback) ->
     @tokenizedBuffer.onDidTokenize(callback)
 
@@ -425,6 +428,15 @@ class DisplayBuffer extends Model
   # tabLength - A {Number} that defines the new tab length.
   setTabLength: (tabLength) ->
     @tokenizedBuffer.setTabLength(tabLength)
+
+  getInputTabLength: ->
+    @tokenizedBuffer.getInputTabLength()
+
+  setInputTabLength: (inputTabLength) ->
+    @tokenizedBuffer.setInputTabLength(inputTabLength)
+
+  usesSoftTabs: ->
+    @tokenizedBuffer.usesSoftTabs()
 
   setInvisibles: (@invisibles) ->
     @tokenizedBuffer.setInvisibles(@invisibles)

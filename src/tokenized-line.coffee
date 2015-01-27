@@ -1,7 +1,7 @@
 _ = require 'underscore-plus'
 
 NonWhitespaceRegex = /\S/
-LeadingWhitespaceRegex = /^\s*/
+WhitespaceRegexesForInputTabLength = {}
 TrailingWhitespaceRegex = /\s*$/
 RepeatedSpaceRegex = /[ ]/g
 idCounter = 1
@@ -12,7 +12,7 @@ class TokenizedLine
   lineIsWhitespaceOnly: false
   foldable: false
 
-  constructor: ({tokens, @lineEnding, @ruleStack, @startBufferColumn, @fold, @tabLength, @indentLevel, @invisibles}) ->
+  constructor: ({tokens, @lineEnding, @ruleStack, @startBufferColumn, @fold, @tabLength, @inputTabLength, @indentLevel, @invisibles}) ->
     @startBufferColumn ?= 0
     @tokens = @breakOutAtomicTokens(tokens)
     @text = @buildText()
@@ -139,7 +139,7 @@ class TokenizedLine
     breakOutLeadingSoftTabs = true
     column = @startBufferColumn
     for token in inputTokens
-      newTokens = token.breakOutAtomicTokens(@tabLength, breakOutLeadingSoftTabs, column)
+      newTokens = token.breakOutAtomicTokens(@tabLength, @inputTabLength, breakOutLeadingSoftTabs, column)
       column += newToken.value.length for newToken in newTokens
       outputTokens.push(newTokens...)
       breakOutLeadingSoftTabs = token.isOnlyWhitespace() if breakOutLeadingSoftTabs
@@ -158,6 +158,9 @@ class TokenizedLine
         token.firstTrailingWhitespaceIndex = Math.max(0, firstTrailingWhitespaceIndex - index)
       index += token.value.length
 
+  whitespaceRegexForInputTabLength: (inputTabLength) ->
+    WhitespaceRegexesForInputTabLength[inputTabLength] ?= new RegExp("^\\s{0,#{inputTabLength}}")
+
   substituteInvisibleCharacters: ->
     invisibles = @invisibles
     changedText = false
@@ -170,14 +173,14 @@ class TokenizedLine
           changedText = true
       else
         if invisibles.space
-          if token.hasLeadingWhitespace()
-            token.value = token.value.replace LeadingWhitespaceRegex, (leadingWhitespace) ->
-              leadingWhitespace.replace RepeatedSpaceRegex, invisibles.space
+          if token.hasLeadingWhitespace() or @lineIsWhitespaceOnly
+            token.value = token.value.replace @whitespaceRegexForInputTabLength(@inputTabLength), (whitespace) ->
+              whitespace.replace RepeatedSpaceRegex, invisibles.space
             token.hasInvisibleCharacters = true
             changedText = true
-          if token.hasTrailingWhitespace()
-            token.value = token.value.replace TrailingWhitespaceRegex, (leadingWhitespace) ->
-              leadingWhitespace.replace RepeatedSpaceRegex, invisibles.space
+          if token.hasTrailingWhitespace() and not @lineIsWhitespaceOnly
+            token.value = token.value.replace TrailingWhitespaceRegex, (whitespace) ->
+              whitespace.replace RepeatedSpaceRegex, invisibles.space
             token.hasInvisibleCharacters = true
             changedText = true
 

@@ -146,6 +146,14 @@ module.exports =
       softTabs:
         type: 'boolean'
         default: true
+      detectFileTabulation:
+        type: 'boolean'
+        default: true
+        description: 'When opening a file, detect whether it is using hard tabs or soft tabs, with what length, and adjust the editor settings accordingly'
+      forcePreferredTabLength:
+        type: 'boolean'
+        default: false
+        description: 'Even if a file has a different tab length, display it within the editor using your preferred tab length'
       softWrapAtPreferredLineLength:
         type: 'boolean'
         default: false

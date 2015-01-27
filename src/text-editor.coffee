@@ -87,7 +87,7 @@ class TextEditor extends Model
     buffer ?= new TextBuffer
     @displayBuffer ?= new DisplayBuffer({buffer, tabLength, softWrapped})
     @buffer = @displayBuffer.buffer
-    @softTabs = @usesSoftTabs() ? @softTabs ? atom.config.get('editor.softTabs') ? true
+    @softTabs = atom.config.get('editor.softTabs') ? true
 
     @updateInvisibles()
 
@@ -152,7 +152,7 @@ class TextEditor extends Model
     @subscribe @displayBuffer.onDidCreateMarker @handleMarkerCreated
     @subscribe @displayBuffer.onDidUpdateMarkers => @mergeIntersectingSelections()
     @subscribe @displayBuffer.onDidChangeGrammar => @handleGrammarChange()
-    @subscribe @displayBuffer.onDidTokenize => @handleTokenization()
+    @subscribe @displayBuffer.onDidDetectTabulation (e) => @handleTabulationDetected(e)
     @subscribe @displayBuffer.onDidChange (e) =>
       @emit 'screen-lines-changed', e
       @emitter.emit 'did-change', e
@@ -295,6 +295,9 @@ class TextEditor extends Model
   # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
   onDidChangeGrammar: (callback) ->
     @emitter.on 'did-change-grammar', callback
+
+  onDidDetectTabulation: (callback) ->
+    @emitter.on 'did-detect-tabulation', callback
 
   # Extended: Calls your `callback` when the result of {::isModified} changes.
   #
@@ -2347,6 +2350,10 @@ class TextEditor extends Model
   #   fallback to using the `editor.tabLength` config setting
   setTabLength: (tabLength) -> @displayBuffer.setTabLength(tabLength)
 
+  getInputTabLength: -> @displayBuffer.getInputTabLength()
+
+  setInputTabLength: (inputTabLength) -> @displayBuffer.setInputTabLength(inputTabLength)
+
   # Extended: Determine if the buffer uses hard or soft tabs.
   #
   # Returns `true` if the first non-comment line with leading whitespace starts
@@ -2359,14 +2366,7 @@ class TextEditor extends Model
     # language-make package
     return false if @getGrammar().scopeName is 'source.makefile'
 
-    for bufferRow in [0..@buffer.getLastRow()]
-      continue if @displayBuffer.tokenizedBuffer.tokenizedLineForRow(bufferRow).isComment()
-
-      line = @buffer.lineForRow(bufferRow)
-      return true  if line[0] is ' '
-      return false if line[0] is '\t'
-
-    undefined
+    @displayBuffer.usesSoftTabs()
 
   # Extended: Get the text representing a single level of indent.
   #
@@ -2376,11 +2376,15 @@ class TextEditor extends Model
   # Returns a {String}.
   getTabText: -> @buildIndentString(1)
 
-  # If soft tabs are enabled, convert all hard tabs to soft tabs in the given
-  # {Range}.
+  # Normalize soft tabs into hard tabs and vice versa in the given {Range}.
   normalizeTabsInBufferRange: (bufferRange) ->
-    return unless @getSoftTabs()
-    @scanInBufferRange /\t/g, bufferRange, ({replace}) => replace(@getTabText())
+    if @getSoftTabs()
+      @scanInBufferRange /^\t+/g, bufferRange, ({replace, matchText}) =>
+        replace(@buildIndentString(matchText.length))
+    else
+      tabLength = @getTabLength
+      @scanInBufferRange new RegExp("^(?: {#{tabLength}})+", 'g'), bufferRange, ({replace, matchText}) =>
+        replace(@buildIndentString(matchText.length / tabLength))
 
   ###
   Section: Soft Wrap Behavior
@@ -2487,8 +2491,8 @@ class TextEditor extends Model
   # Constructs the string used for tabs.
   buildIndentString: (number, column=0) ->
     if @getSoftTabs()
-      tabStopViolation = column % @getTabLength()
-      _.multiplyString(" ", Math.floor(number * @getTabLength()) - tabStopViolation)
+      tabStopViolation = column % @getInputTabLength()
+      _.multiplyString(" ", Math.floor(number * @getInputTabLength()) - tabStopViolation)
     else
       _.multiplyString("\t", Math.floor(number))
 
@@ -2871,9 +2875,6 @@ class TextEditor extends Model
   Section: Event Handlers
   ###
 
-  handleTokenization: ->
-    @softTabs = @usesSoftTabs() ? @softTabs
-
   handleGrammarChange: ->
     @updateInvisibles()
     @subscribeToScopedConfigSettings()
@@ -2884,6 +2885,11 @@ class TextEditor extends Model
   handleMarkerCreated: (marker) =>
     if marker.matchesProperties(@getSelectionMarkerAttributes())
       @addSelection(marker)
+
+  handleTabulationDetected: (event) ->
+    @softTabs = event.softTabs
+    @emit 'tabulation-detected', event
+    @emitter.emit 'did-detect-tabulation', event
 
   ###
   Section: TextEditor Rendering

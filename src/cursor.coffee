@@ -220,7 +220,7 @@ class Cursor extends Model
   # Public: Returns the indentation level of the current line.
   getIndentLevel: ->
     if @editor.getSoftTabs()
-      @getBufferColumn() / @editor.getTabLength()
+      @getBufferColumn() / @editor.getInputTabLength()
     else
       @getBufferColumn()
 

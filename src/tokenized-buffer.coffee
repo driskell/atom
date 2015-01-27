@@ -14,6 +14,7 @@ class TokenizedBuffer extends Model
   Serializable.includeInto(this)
 
   @property 'tabLength'
+  @property 'inputTabLength'
 
   grammar: null
   currentGrammarScore: null
@@ -22,6 +23,8 @@ class TokenizedBuffer extends Model
   chunkSize: 50
   invalidRows: null
   visible: false
+  inputTabLength: null
+  detectedSoftTabs: undefined
 
   constructor: ({@buffer, @tabLength, @invisibles}) ->
     @emitter = new Emitter
@@ -37,6 +40,7 @@ class TokenizedBuffer extends Model
   serializeParams: ->
     bufferPath: @buffer.getPath()
     tabLength: @tabLength
+    inputTabLength: @inputTabLength
     invisibles: _.clone(@invisibles)
 
   deserializeParams: (params) ->
@@ -49,6 +53,9 @@ class TokenizedBuffer extends Model
 
   onDidChangeGrammar: (callback) ->
     @emitter.on 'did-change-grammar', callback
+
+  onDidDetectTabulation: (callback) ->
+    @emitter.on 'did-detect-tabulation', callback
 
   onDidChange: (callback) ->
     @emitter.on 'did-change', callback
@@ -84,13 +91,25 @@ class TokenizedBuffer extends Model
     @currentGrammarScore = score ? grammar.getScore(@buffer.getPath(), @buffer.getText())
     @subscribe @grammar.onDidUpdate => @retokenizeLines()
 
-    @configSettings = tabLength: atom.config.get('editor.tabLength', scope: @rootScopeDescriptor)
+    @configSettings =
+      tabLength: atom.config.get('editor.tabLength', scope: @rootScopeDescriptor)
+      forcePreferredTabLength: atom.config.get('editor.forcePreferredTabLength', scope: @rootScopeDescriptor)
 
     @grammarTabLengthSubscription?.dispose()
     @grammarTabLengthSubscription = atom.config.onDidChange 'editor.tabLength', scope: @rootScopeDescriptor, ({newValue}) =>
       @configSettings.tabLength = newValue
       @retokenizeLines()
     @subscribe @grammarTabLengthSubscription
+
+    @grammarForcePreferredTabLengthLengthSubscription?.dispose()
+    @grammarForcePreferredTabLengthLengthSubscription = atom.config.onDidChange 'editor.forcePreferredTabLength', scope: @rootScopeDescriptor, ({newValue}) =>
+      @configSettings.forcePreferredTabLength = newValue
+      if newValue
+        @setTabLength(@configSettings.tabLength)
+      else
+        @setTabLength(@inputTabLength)
+      @retokenizeLines()
+    @subscribe @grammarForcePreferredTabLengthLengthSubscription
 
     @retokenizeLines()
 
@@ -129,7 +148,26 @@ class TokenizedBuffer extends Model
     return if tabLength is @tabLength
 
     @tabLength = tabLength
-    @retokenizeLines()
+    if @fullyTokenized
+      @retokenizeLines()
+
+  getInputTabLength: ->
+    @inputTabLength ? @configSettings.tabLength
+
+  setInputTabLength: (inputTabLength) ->
+    return if inputTabLength is @inputTablength
+
+    @inputTabLength = inputTabLength
+
+    if !@configSettings.forcePreferredTabLength and @tabLength != inputTabLength
+      @setTabLength(inputTabLength)
+      return
+
+    if @fullyTokenized
+      @retokenizeLines()
+
+  usesSoftTabs: ->
+    @detectedSoftTabs
 
   setInvisibles: (invisibles) ->
     unless _.isEqual(invisibles, @invisibles)
@@ -296,10 +334,11 @@ class TokenizedBuffer extends Model
   buildPlaceholderTokenizedLineForRow: (row) ->
     line = @buffer.lineForRow(row)
     tokens = [new Token(value: line, scopes: [@grammar.scopeName])]
+    inputTabLength = @getInputTabLength()
     tabLength = @getTabLength()
     indentLevel = @indentLevelForRow(row)
     lineEnding = @buffer.lineEndingForRow(row)
-    new TokenizedLine({tokens, tabLength, indentLevel, @invisibles, lineEnding})
+    new TokenizedLine({tokens, tabLength, inputTabLength, indentLevel, @invisibles, lineEnding})
 
   buildTokenizedLineForRow: (row, ruleStack) ->
     @buildTokenizedLineForRowWithText(row, @buffer.lineForRow(row), ruleStack)
@@ -309,13 +348,39 @@ class TokenizedBuffer extends Model
     tabLength = @getTabLength()
     indentLevel = @indentLevelForRow(row)
     {tokens, ruleStack} = @grammar.tokenizeLine(line, ruleStack, row is 0)
-    new TokenizedLine({tokens, ruleStack, tabLength, lineEnding, indentLevel, @invisibles})
+    @detectFileTabulation(line, tokens) unless @detectedSoftTabs?
+    inputTabLength = @getInputTabLength()
+    new TokenizedLine({tokens, ruleStack, tabLength, inputTabLength, lineEnding, indentLevel, @invisibles})
 
   tokenizedLineForRow: (bufferRow) ->
     @tokenizedLines[bufferRow]
 
   stackForRow: (bufferRow) ->
     @tokenizedLines[bufferRow]?.ruleStack
+
+  detectFileTabulation: (line, tokens) ->
+    for token in tokens
+      continue if token.scopes.length is 1
+      continue if token.isOnlyWhitespace()
+      for scope in token.scopes
+        return if _.contains(scope.split('.'), 'comment')
+      break
+
+    if match = line.match(/^[ ]+/)
+      if atom.config.get('editor.detectFileTabulation', scope: @rootScopeDescriptor)
+        inputTabLength = match[0].length % 8
+        if inputTabLength == 5 or inputTabLength == 7
+          inputTabLength--
+        @setInputTabLength(inputTabLength)
+      @detectedSoftTabs = true
+      event = {softTabs: true, inputTabLength: inputTabLength}
+      @emit 'tabulation-detected', event
+      @emitter.emit 'did-detect-tabulation', event
+    else if match = line.match(/^\t+/)
+      @detectedSoftTabs = false
+      event = {softTabs: false}
+      @emit 'tabulation-detected', event
+      @emitter.emit 'did-detect-tabulation', event
 
   indentLevelForRow: (bufferRow) ->
     line = @buffer.lineForRow(bufferRow)
@@ -348,7 +413,7 @@ class TokenizedBuffer extends Model
       leadingWhitespace = match[0]
       tabCount = leadingWhitespace.match(/\t/g)?.length ? 0
       spaceCount = leadingWhitespace.match(/[ ]/g)?.length ? 0
-      tabCount + (spaceCount / @getTabLength())
+      tabCount + (spaceCount - (spaceCount % @getInputTabLength())) / @getInputTabLength()
     else
       0
 
