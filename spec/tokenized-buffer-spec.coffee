@@ -722,7 +722,7 @@ describe "TokenizedBuffer", ->
         expect(tokenizedBuffer.tokenizedLineForRow(1).indentLevel).toBe 1
         expect(tokenizedBuffer.tokenizedLineForRow(2).indentLevel).toBe 2
         buffer.insert([2, 0], ' ')
-        expect(tokenizedBuffer.tokenizedLineForRow(2).indentLevel).toBe 2.5
+        expect(tokenizedBuffer.tokenizedLineForRow(2).indentLevel).toBe 2
 
     describe "when the line is empty", ->
       it "assumes the indentation level of the first non-empty line below or above if one exists", ->
@@ -900,3 +900,17 @@ describe "TokenizedBuffer", ->
       expect(tokenizedBuffer.tokenizedLineForRow(1).tokens[0].value).toBe 'b'
       expect(tokenizedBuffer.tokenizedLineForRow(2).tokens.length).toBe 1
       expect(tokenizedBuffer.tokenizedLineForRow(2).tokens[0].value).toBe 'c'
+
+  describe ".parseIndentation(leadingWhitespace)", ->
+    it "parses the indentation correctly", ->
+      buffer = atom.project.bufferForPathSync('sample-with-tabs-and-initial-comment.js')
+      tokenizedBuffer = new TokenizedBuffer({buffer})
+      fullyTokenize(tokenizedBuffer)
+
+      expect(tokenizedBuffer.tokenizedLineForRow(0).indentLevel).toBe 0
+      expect(tokenizedBuffer.tokenizedLineForRow(1).indentLevel).toBe 0
+      expect(tokenizedBuffer.tokenizedLineForRow(2).indentLevel).toBe 0
+      expect(tokenizedBuffer.tokenizedLineForRow(3).indentLevel).toBe 0
+      expect(tokenizedBuffer.tokenizedLineForRow(4).indentLevel).toBe 0
+      expect(tokenizedBuffer.tokenizedLineForRow(5).indentLevel).toBe 0
+      expect(tokenizedBuffer.tokenizedLineForRow(6).indentLevel).toBe 1
