@@ -2230,11 +2230,10 @@ class TextEditor extends Model
   # Returns a {String}.
   getTabText: -> @buildIndentString(1)
 
-  # If soft tabs are enabled, convert all hard tabs to soft tabs in the given
-  # {Range}.
+  # Normalize soft tabs into hard tabs and vice versa in the given {Range}.
   normalizeTabsInBufferRange: (bufferRange) ->
-    return unless @getSoftTabs()
-    @scanInBufferRange /\t/g, bufferRange, ({replace}) => replace(@getTabText())
+    @scanInBufferRange /^[ \t]+/gm, bufferRange, ({replace, matchText}) =>
+      replace(@modifyIndentWhitespace(matchText))
 
   # Essential: Set the indentation level for the given buffer row.
   #

@@ -4151,21 +4151,34 @@ describe "TextEditor", ->
             expect(tokens[2].value).toBe "SELECT"
             expect(tokens[2].scopes).toEqual ["source.js", "comment.line.double-slash.js", "keyword.other.DML.sql"]
 
-  describe ".normalizeTabsInBufferRange()", ->
-    it "normalizes tabs depending on the editor's soft tab/tab length settings", ->
+  fdescribe ".normalizeTabsInBufferRange()", ->
+    fit "normalizes tabs depending on the editor's soft tab/tab length settings", ->
+      # Should obey the buffer range
       editor.setTabLength(1)
       editor.setSoftTabs(true)
       editor.setText('\t\t\t')
       editor.normalizeTabsInBufferRange([[0, 0], [0, 1]])
       expect(editor.getText()).toBe ' \t\t'
 
+      # Should account for mixed space/tab and keep indentation the same level
       editor.setTabLength(2)
       editor.normalizeTabsInBufferRange([[0, 0], [Infinity, Infinity]])
-      expect(editor.getText()).toBe '     '
+      expect(editor.getText()).toBe '    '
 
+      # Should maintain the same level by leaving a space
+      editor.setSoftTabs(false)
+      editor.setText('\t\t ')
+      editor.normalizeTabsInBufferRange([[0, 0], [Infinity, Infinity]])
+      expect(editor.getText()).toBe '\t\t '
+
+      # Should normalise multiple hard tab to soft tab and back again
+      editor.setSoftTabs(true)
+      editor.setText('\t\t\t')
+      editor.normalizeTabsInBufferRange([[0, 0], [Infinity, Infinity]])
+      expect(editor.getText()).toBe '      '
       editor.setSoftTabs(false)
       editor.normalizeTabsInBufferRange([[0, 0], [Infinity, Infinity]])
-      expect(editor.getText()).toBe '     '
+      expect(editor.getText()).toBe '\t\t\t'
 
   describe ".scrollToCursorPosition()", ->
     it "scrolls the last cursor into view, centering around the cursor if possible and the 'center' option isn't false", ->
